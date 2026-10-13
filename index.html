@@ -50,6 +50,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 input,select,textarea{background:var(--paper);border:1px solid var(--line2);border-radius:12px;padding:7px 9px;min-width:0}
 input:focus,select:focus,textarea:focus,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .btn{border:1.5px solid var(--btnline);color:var(--ink);background:var(--paper);border-radius:999px;padding:7px 14px;cursor:pointer;font-size:14px}
+.btn{text-decoration:none;display:inline-block}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--btnink);font-weight:700}
 .btn.ghost{border-color:transparent!important;background:transparent;color:var(--ink2)}
 .btn.danger{color:var(--up)}
@@ -118,6 +119,9 @@ textarea{width:100%;min-height:110px;font-size:12px;font-family:ui-monospace,Men
 .subd>summary{list-style:none;cursor:pointer;color:var(--accent);font-size:13.5px;padding:10px 0 4px}
 .subd>summary::-webkit-details-marker{display:none}
 .hint{font-size:12px;margin-top:4px;min-height:16px}
+.subh{font-size:13.5px;font-weight:700;color:var(--accent);margin:14px 4px 2px}
+.rg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px;margin-top:6px}
+.rg label{font-size:12.5px;color:var(--ink2);display:flex;flex-direction:column;gap:3px}
 .toast{font-size:12.5px;color:var(--down);min-height:18px;margin-top:6px;text-align:right;font-weight:500}
 footer{text-align:center;color:var(--ink3);font-size:12px;margin-top:20px}
 </style>
@@ -141,7 +145,7 @@ footer{text-align:center;color:var(--ink3);font-size:12px;margin-top:20px}
 <script>
 const KEY='tw-stock-calc-v1';
 const DEFAULT={
-  v:5,
+  v:6,
   settings:{rate:0.000399,minFee:20,dcaFee:1,fx:0,usDca:0.1,usEtf:3,usRate:0.0008},
   us:[],
   calc:{budget:10000,maxLoss:500,profit:500},
@@ -177,6 +181,7 @@ function migrate(){const D=JSON.parse(JSON.stringify(DEFAULT));
   if(S.v<4){if(!S.us)S.us=D.us;if(S.settings.fx===undefined)S.settings.fx=0;S.v=4;save()}
   if(S.v<5){const s=S.settings;if(s.usDca===undefined)s.usDca=0.1;if(s.usEtf===undefined)s.usEtf=3;if(s.usRate===undefined)s.usRate=0.0008;
     S.holdings.forEach(h=>{if(!h.ann){h.ann={};if(h.code==='2330')h.ann={12:7};if(h.code==='0056')h.ann={10:1.72}}});S.v=5;save()}
+  if(S.v<6){const PF={};S.holdings.forEach(h=>{const p=PF[h.code];if(p&&!h.bq)Object.assign(h,p)});S.v=6;save()}
   S.holdings.forEach(h=>{h.ann=h.ann||{}});
   S.us=S.us||[];S.plans=S.plans||[];}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
@@ -207,7 +212,7 @@ function hStats(h){const etf=isETF(h.type);let q=0,c=0,real=0;const rl={};
     else{q+=+l.shares||0;c+=lotCost(l)}});
   if(q<1e-9){q=0;c=0}
   const sold=h.lots.some(l=>l.kind==='sell');
-  const v=q*h.price;const L=+h.maxLoss||0,P=+h.profit||0;
+  const v=q>0&&h.price>0?net(q,h.price,etf):0;const L=+h.maxLoss||0,P=+h.profit||0;
   return{etf,q,c,real,rl,sold,avg:q?c/q:0,v,pnl:v-c,pct:c?(v-c)/c*100:0,
     be:solve(c,q,etf),stop:(!h.longTerm&&L>0)?solve(c-L,q,etf):null,tp:P>0?solve(c+P,q,etf):null}}
 function levels(be,stop,tp,etf,longTerm,hasLoss){
@@ -246,86 +251,125 @@ function lookup(pre,code){const c=String(code||'').trim().toUpperCase(),hint=doc
   else if(u){set('name',u[0]);set('sec',u[1]);if(pre==='ap')set('cur','USD');if(hint){hint.textContent='已帶入：'+u[0]+'（美股）';hint.style.color='var(--down)'}}
   else if(hint){hint.textContent='內建清單查不到，請自行填名稱與類型';hint.style.color='var(--ink3)'}}
 
-function renderHold(){
-  const st=S.holdings.map(h=>({h,s:hStats(h)}));const fx=+S.settings.fx||0,uC=S.us.reduce((a,u)=>a+(+u.cost||0),0),uV=S.us.reduce((a,u)=>a+(+u.value||0),0);
-  const inc=!!S.settings.ovUS&&fx>0&&S.us.length>0,ux=inc?fx:0;
-  const tc=st.reduce((a,x)=>a+x.s.c,0)+uC*ux,tv=st.reduce((a,x)=>a+x.s.v,0)+uV*ux,tp=tv-tc;
-  const palette=['#9DBCEB','#F3C77A','#EFA9A0','#BDB4EE','#9ED8C2','#D7CFA8'];
-  const bySec={};st.forEach(x=>{bySec[x.h.sector||'其他']=(bySec[x.h.sector||'其他']||0)+x.s.v});if(inc)S.us.forEach(u=>{const k=u.sector||'美股';bySec[k]=(bySec[k]||0)+(+u.value||0)*fx});
-  const tsmc=tv?st.reduce((a,x)=>a+x.s.v*(+x.h.tsmc||0)/100,0)/tv*100:0;
-  let html=`<section class="panel"><h2>總覽${inc?'（台股＋美股，台幣計）':'（台股）'}</h2><div class="sum num">
-    <div><div class="k">總成本</div><div class="v">${fm(tc)}</div></div>
-    <div><div class="k">現值</div><div class="v">${fm(tv)}</div></div>
-    <div><div class="k">帳面損益</div><div class="v ${tp>=0?'up':'down'}">${tp>=0?'+':''}${fm(tp)}</div></div></div>
-    ${st.some(x=>x.s.sold)?(()=>{const r=st.reduce((a,x)=>a+x.s.real,0);return `<div class="muted num" style="margin-top:8px">已實現損益合計 <b class="${r>=0?'up':'down'}">${r>=0?'+':''}${fm(r)} 元</b>（${st.filter(x=>x.s.sold).map(x=>esc(x.h.name)+' '+(x.s.real>=0?'+':'')+fm(x.s.real)).join('、')}）<br>這是你在卡片裡「記錄賣出」的交易，已經確定的賺賠；若是測試用的紀錄，點開該檔刪除那筆賣出即可。</div>`})():''}
-    ${S.us.length?`<div class="row" style="margin-top:10px"><span class="muted">總覽範圍</span><button class="btn${S.settings.ovUS?'':' primary'}" data-act="ov" data-v="0">只看台股</button><button class="btn${S.settings.ovUS?' primary':''}" data-act="ov" data-v="1">台股＋美股</button></div>
-    ${S.settings.ovUS?`<div class="row"><label>美金匯率（1 美元＝幾台幣）<input type="number" step="0.01" inputmode="decimal" value="${fx||''}" placeholder="例如換匯時的匯率" data-f="ufx"></label></div>${fx?'':'<div class="warn">輸入匯率後，美股才會換算加進總覽。</div>'}`:''}
-    <div class="muted">國泰 App 的「帳務 › 台股」只算台股，對帳時請選「只看台股」；美股在國泰的「海外股票」另外計算。</div>`:''}
-    <div class="muted" style="margin-top:10px">市值占比</div>
-    <div class="stack num">${st.map((x,i)=>tv&&x.s.v>0?`<span style="width:${(x.s.v/tv*100).toFixed(1)}%;background:${palette[i%6]};color:#1B2430">${esc(x.h.name)} ${(x.s.v/tv*100).toFixed(0)}%</span>`:'').join('')}${inc&&tv?S.us.map(u=>`<span style="width:${((+u.value||0)*fx/tv*100).toFixed(1)}%;background:#B5D4F4;color:#1B2430">${esc(u.code)} ${((+u.value||0)*fx/tv*100).toFixed(0)}%</span>`).join(''):''}</div>
-    <div class="muted" style="margin-top:8px">產業：${Object.entries(bySec).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${esc(k)} ${tv?(v/tv*100).toFixed(0):0}%`).join('、')}</div>
-    <div class="muted" style="margin-top:8px">台積電實際曝險（估）</div>
-    <div class="stack num"><span style="width:${tsmc.toFixed(1)}%;background:var(--upbg);color:var(--up)">台積電 ${tsmc.toFixed(0)}%</span><span style="flex:1;background:var(--chip);color:var(--ink2)">其他</span></div>
-    ${tsmc>50?`<div class="note">一半以上的資金實際押在台積電。新增部位時，可優先考慮不同產業或市場。</div>`:''}
-  </section>`;
-  const twC=st.reduce((a,x)=>a+x.s.c,0),twV=st.reduce((a,x)=>a+x.s.v,0),twP=twV-twC,twN=st.filter(x=>x.s.q>0).length;
-  html+=`<details class="sec" data-id="sec-tw"${openSet.has('sec-tw')?' open':''}><summary><div><h2>台股持股</h2><div class="muted num">${twN} 檔持有中・現值 ${fm(twV)} 元</div></div>
-    <div class="pl num"><b class="${twP>=0?'up':'down'}">${twP>=0?'+':''}${fm(twP)}</b><span class="muted">點開看明細</span> <span class="chev">▾</span></div></summary><div class="secb">`;
-  html+=st.map(({h,s})=>{
-    const hasDca=h.lots.some(l=>l.kind==='dca'||(l.kind==='init'&&h.longTerm));
-    const lotsHtml=h.lots.map(l=>{if(l.kind==='sell'){const r=s.rl[l.id]||0;
-      return `<div class="lot num"><div class="lh"><span><b style="font-weight:500;color:var(--down)">賣出</b>・${esc(l.date)}</span><button class="btn ghost danger" data-act="dellot" data-h="${h.id}" data-l="${l.id}" aria-label="刪除這筆">刪除</button></div>
+function disp(h){const s=hStats(h),bq=+h.bq||0,bc=+h.bc||0,bv=+h.bv||0,bd=+h.bd||0;
+  if(bq>0&&bc>0&&bv>0){const e=s.etf,L=+h.maxLoss||0,P=+h.profit||0;
+    return Object.assign({},s,{src:'b',q:bq,c:bc,v:bv,avg:bc/bq,pnl:bv-bc,pct:(bv-bc)/bc*100,dv:bd,be:solve(bc,bq,e),stop:(!h.longTerm&&L>0)?solve(bc-L,bq,e):null,tp:P>0?solve(bc+P,bq,e):null})}
+  return Object.assign({},s,{src:'c',dv:bd})}
+let reconOpen=false;
+function sgn(n){return (n>=0?'+':'')+fm(n)}
+function renderRecon(){const fx=+S.settings.fx||0;
+  return `<section class="panel" id="recon" style="border:2px solid var(--accent)"><h2>對帳更新</h2>
+  <p class="muted">打開國泰 App「帳務 › 台股 › 庫存」，點每一檔右邊的 ⌄ 展開，照著抄這四個數字。抄完按最下面的「儲存並收起」。</p>
+  ${S.holdings.map(h=>`<div style="border-top:1px solid var(--line);padding:10px 0">
+    <div style="font-weight:500">${esc(h.name)} <span class="code">${esc(h.code)}</span>${h.btime?`<span class="muted">・上次對帳 ${esc(h.btime)}</span>`:'<span class="muted">・尚未對帳</span>'}</div>
+    <div class="rg num">
+      <label>總股數<input type="number" inputmode="decimal" value="${h.bq||''}" data-f="bq" data-h="${h.id}"></label>
+      <label>成本<input type="number" inputmode="decimal" value="${h.bc||''}" data-f="bc" data-h="${h.id}"></label>
+      <label>現值<input type="number" inputmode="decimal" value="${h.bv||''}" data-f="bv" data-h="${h.id}"></label>
+      <label>總配息<input type="number" inputmode="decimal" value="${h.bd||''}" placeholder="沒有就留空" data-f="bd" data-h="${h.id}"></label></div></div>`).join('')}
+  ${S.us.length?`<div style="border-top:1px solid var(--line);padding:10px 0"><div style="font-weight:500">美股</div>
+    <p class="muted">國泰「定期投資 › 美股」上的總成本與現值（美元）。</p>
+    ${S.us.map(u=>`<div class="rg num" style="margin-top:6px"><label>${esc(u.code)} 成本<input type="number" step="any" inputmode="decimal" value="${u.cost}" data-f="ucost" data-u="${u.id}"></label><label>${esc(u.code)} 現值<input type="number" step="any" inputmode="decimal" value="${u.value}" data-f="uval" data-u="${u.id}"></label></div>`).join('')}
+    <div class="rg num" style="margin-top:6px"><label>美金匯率<input type="number" step="0.01" inputmode="decimal" value="${fx||''}" placeholder="例如 32" data-f="ufx"></label></div></div>`:''}
+  <div class="row"><button class="btn primary" data-act="reconsave">儲存並收起</button><span class="muted">每一格離開時也會自動儲存</span></div></section>`}
+function dcaRow(h,s){const n=nextDiv(h),wd=s.pnl+s.dv;
+  return `<details class="card" data-id="${h.id}"${openSet.has(h.id)?' open':''}><summary>
+  <div class="top"><div><div class="name">${esc(h.name)}<span class="code">${esc(h.code)}</span></div>
+    <div style="margin-top:4px">${tagFor(h.type)}${s.src==='b'?'':'<span class="tag" style="background:var(--amberbg);color:var(--amber)">尚未對帳</span>'}</div></div>
+  <div class="pl num">${s.q?`<b class="${s.pnl>=0?'up':'down'}">${sgn(s.pnl)}</b><span class="${s.pnl>=0?'up':'down'}" style="font-size:12px">${s.pct>=0?'+':''}${s.pct.toFixed(2)}%</span>`:'<b style="color:var(--ink3)">—</b>'} <span class="chev">▾</span></div></div>
+  <div class="meta num">${s.q?fm(s.q)+' 股・成本 '+fm(s.c):'尚未持有'}${s.dv>0?`・含息報酬 <b class="${wd>=0?'up':'down'}">${sgn(wd)}</b>`:''}</div>
+  ${n&&n.q>0?`<div class="meta num" style="margin-top:6px"><span class="tag" style="background:var(--amberbg);color:var(--amber)">下次配息 ${n.y}/${n.m} 約 ${fm(n.amt)} 元${n.est?'（估）':''}</span></div>`:''}
+  </summary><div class="body num">
+    <div class="kv"><span>總股數</span><span>${fm(s.q)} 股</span></div>
+    <div class="kv"><span>成本</span><span>${fm(s.c)} 元</span></div>
+    <div class="kv"><span>現值</span><span>${fm(s.v)} 元</span></div>
+    <div class="kv"><span>不含息損益</span><b class="${s.pnl>=0?'up':'down'}">${sgn(s.pnl)} 元</b></div>
+    <div class="kv"><span>總配息</span><span>${fm(s.dv)} 元</span></div>
+    <div class="kv"><span>含息報酬</span><b class="${wd>=0?'up':'down'}">${sgn(wd)} 元</b></div>
+    <div class="kv"><span>扣款</span><span>${esc(h.plan||'—')}</span></div>
+    <p class="muted">${s.src==='b'?'數字來自 '+esc(h.btime)+' 的對帳。':'還沒對帳，以上為估算。'}要更新請按總覽的「對帳更新」。配息月份與金額在「扣款配息」分頁修改。</p>
+    <div class="row"><label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-f="hlong" data-h="${h.id}" checked>屬於定期定額（取消勾選會移到現股）</label></div>
+    <div class="row"><span style="flex:1"></span><button class="btn danger" data-act="delh" data-h="${h.id}">刪除這檔</button></div>
+  </div></details>`}
+function lumpCard(h,s){
+  const lotsHtml=h.lots.map(l=>{if(l.kind==='sell'){const r=s.rl[l.id]||0;
+      return `<div class="lot num"><div class="lh"><span><b style="font-weight:500;color:var(--down)">賣出</b>・${esc(l.date)}</span><button class="btn ghost danger" data-act="dellot" data-h="${h.id}" data-l="${l.id}">刪除</button></div>
       <div class="row" style="margin:4px 0"><span class="muted">股數</span><input type="number" inputmode="decimal" value="${l.shares}" data-f="lotq" data-h="${h.id}" data-l="${l.id}">
       <span class="muted">賣出價</span><input type="number" inputmode="decimal" step="any" value="${l.price}" data-f="lotp" data-h="${h.id}" data-l="${l.id}"></div>
-      <div class="muted">已實現損益（扣手續費與證交稅）<b class="${r>=0?'up':'down'}">${r>=0?'+':''}${fm(r)} 元</b></div></div>`}
-      const c=lotCost(l),lb=solve(c,+l.shares,s.etf),showL=l.kind==='lump'||(l.kind==='init'&&!h.longTerm);
-      const ls=showL&&!h.longTerm&&+h.maxLoss>0?solve(c-(+h.maxLoss)*(c/s.c||1),+l.shares,s.etf):null,lt=showL&&+h.profit>0?solve(c+(+h.profit)*(c/s.c||1),+l.shares,s.etf):null;
-      const kn=l.kind==='dca'?'定期定額':l.kind==='lump'?'單筆':'期初庫存（截圖估算）';
-      return `<div class="lot num"><div class="lh"><span><b style="font-weight:500">${kn}</b>・${esc(l.date)}</span><button class="btn ghost danger" data-act="dellot" data-h="${h.id}" data-l="${l.id}" aria-label="刪除這筆">刪除</button></div>
+      <div class="muted">已實現損益 <b class="${r>=0?'up':'down'}">${sgn(r)} 元</b></div></div>`}
+    const c=lotCost(l),lb=solve(c,+l.shares,s.etf),base=hStats(h).c||1;
+    const ls=+h.maxLoss>0?solve(c-(+h.maxLoss)*(c/base),+l.shares,s.etf):null,lt=+h.profit>0?solve(c+(+h.profit)*(c/base),+l.shares,s.etf):null;
+    const kn=l.kind==='dca'?'定期定額':l.kind==='lump'?'單筆':'期初庫存';
+    return `<div class="lot num"><div class="lh"><span><b style="font-weight:500">${kn}</b>・${esc(l.date)}</span><button class="btn ghost danger" data-act="dellot" data-h="${h.id}" data-l="${l.id}">刪除</button></div>
       <div class="row" style="margin:4px 0"><span class="muted">股數</span><input type="number" inputmode="decimal" value="${l.shares}" data-f="lotq" data-h="${h.id}" data-l="${l.id}">
-      <span class="muted">${l.kind==='init'?'平均成本':'成交價'}</span><input type="number" inputmode="decimal" step="any" value="${l.price}" data-f="lotp" data-h="${h.id}" data-l="${l.id}"></div>
-      ${showL?`<div class="l3"><span class="down">停損 ${ls?pfmt(ls,s.etf):'—'}</span><span style="color:var(--amber)">兩平 ${lb?pfmt(lb,s.etf):'—'}</span><span class="up">停利 ${lt?pfmt(lt,s.etf):'—'}</span></div>`:`<div class="muted">成本 ${fm(c)} 元${l.kind==='dca'?'（含手續費 '+S.settings.dcaFee+' 元）':''}</div>`}</div>`}).join('');
-    return `<details class="card" data-id="${h.id}"${openSet.has(h.id)?' open':''}><summary>
-    <div class="top"><div><div class="name">${esc(h.name)}<span class="code">${esc(h.code)}</span></div>
-    <div style="margin-top:4px">${tagFor(h.type)}${hasDca?'<span class="tag dca">定期定額</span>':''}${h.lots.some(l=>l.kind==='lump')||(!h.longTerm)?'<span class="tag">單筆</span>':''}</div></div>
-    <div class="pl num">${s.q?`<b class="${s.pnl>=0?'up':'down'}">${s.pnl>=0?'+':''}${fm(s.pnl)}</b><span class="${s.pnl>=0?'up':'down'}" style="font-size:12px">${s.pct>=0?'+':''}${s.pct.toFixed(2)}%</span>`:'<b style="color:var(--ink3)">—</b>'} <span class="chev">▾</span></div></div>
-    <div class="meta num">${s.q?fm(s.q)+' 股・均價 '+s.avg.toFixed(2):(s.sold?'已全部賣出':'尚無買進紀錄')}${s.sold?`・已實現 <span class="${s.real>=0?'up':'down'}">${s.real>=0?'+':''}${fm(s.real)}</span>`:''}・現價 ${h.price}（${esc(h.time)}）${h.plan?'・'+esc(h.plan):''}</div>
-    ${(()=>{const n=nextDiv(h);return n&&n.q>0?`<div class="meta num" style="margin-top:6px"><span class="tag" style="background:var(--amberbg);color:var(--amber)">下次配息 ${n.y}/${n.m} 約 ${fm(n.amt)} 元${n.est?'（估）':''}</span></div>`:''})()}
-    ${h.div>0?`<div class="meta num" style="color:var(--down)">配息 ${h.months.length?h.months.join('、')+' 月除息':''}・每股約 ${h.div} 元${s.q?'・每次約領 '+fm(s.q*h.div)+' 元':''}・${h.reinvest?'股息再投資':'領現金'}</div>`:''}
-    ${levels(s.be,s.stop,s.tp,s.etf,h.longTerm,+h.maxLoss>0)}${track(h.price,s.stop,s.be,s.tp)}
-    </summary><div class="body">
-      <div class="row"><label>現價<input type="number" inputmode="decimal" step="any" value="${h.price}" data-f="hprice" data-h="${h.id}"></label>
-      <label>可承受虧損（元）<input type="number" inputmode="numeric" value="${h.maxLoss||''}" placeholder="例如 500" data-f="hloss" data-h="${h.id}"${h.longTerm?' disabled':''}></label>
-      <label>想賺多少（元）<input type="number" inputmode="numeric" value="${h.profit||''}" placeholder="例如 500" data-f="hprofit" data-h="${h.id}"></label></div>
-      <div class="row"><label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-f="hlong" data-h="${h.id}"${h.longTerm?' checked':''}>長期存股（不算停損）</label>
+      <span class="muted">${l.kind==='init'?'平均成本（含手續費）':'成交價'}</span><input type="number" inputmode="decimal" step="any" value="${l.price}" data-f="lotp" data-h="${h.id}" data-l="${l.id}"></div>
+      <div class="l3"><span class="down">停損 ${ls?pfmt(ls,s.etf):'—'}</span><span style="color:var(--amber)">兩平 ${lb?pfmt(lb,s.etf):'—'}</span><span class="up">停利 ${lt?pfmt(lt,s.etf):'—'}</span></div></div>`}).join('');
+  return `<details class="card" data-id="${h.id}"${openSet.has(h.id)?' open':''}><summary>
+  <div class="top"><div><div class="name">${esc(h.name)}<span class="code">${esc(h.code)}</span></div>
+    <div style="margin-top:4px">${tagFor(h.type)}${s.src==='b'?'':'<span class="tag" style="background:var(--amberbg);color:var(--amber)">尚未對帳</span>'}</div></div>
+  <div class="pl num">${s.q?`<b class="${s.pnl>=0?'up':'down'}">${sgn(s.pnl)}</b><span class="${s.pnl>=0?'up':'down'}" style="font-size:12px">${s.pct>=0?'+':''}${s.pct.toFixed(2)}%</span>`:'<b style="color:var(--ink3)">—</b>'} <span class="chev">▾</span></div></div>
+  <div class="meta num">${s.q?fm(s.q)+' 股・均價 '+s.avg.toFixed(2):(s.sold?'已全部賣出':'尚無買進紀錄')}${s.sold?`・已實現 <span class="${s.real>=0?'up':'down'}">${sgn(s.real)}</span>`:''}${s.dv>0?'・總配息 '+fm(s.dv):''}</div>
+  ${levels(s.be,s.stop,s.tp,s.etf,false,+h.maxLoss>0)}${track(h.price,s.stop,s.be,s.tp)}
+  </summary><div class="body">
+    <div class="row"><label>可承受虧損（元）<input type="number" inputmode="numeric" value="${h.maxLoss||''}" placeholder="例如 500" data-f="hloss" data-h="${h.id}"></label>
+    <label>想賺多少（元）<input type="number" inputmode="numeric" value="${h.profit||''}" placeholder="例如 500" data-f="hprofit" data-h="${h.id}"></label></div>
+    <p class="muted">停損、兩平、停利依${s.src==='b'?'對帳的成本':'買進紀錄'}計算，已扣手續費與證交稅。</p>
+    <div style="margin-top:10px;font-weight:500;font-size:14px">交易紀錄</div>${lotsHtml}
+    <details class="subd"><summary>＋ 新增買進 ▾</summary>
+    <div class="row"><label>日期<input type="date" id="nd-${h.id}" value="${new Date().toISOString().slice(0,10)}"></label>
+      <label>股數<input type="number" inputmode="numeric" id="nq-${h.id}" placeholder="10"></label>
+      <label>成交價<input type="number" inputmode="decimal" step="any" id="np-${h.id}" placeholder="${h.price}"></label>
+      <input type="hidden" id="nk-${h.id}" value="lump"></div>
+    <div class="row"><button class="btn primary" data-act="addlot" data-h="${h.id}">新增買進</button><span class="muted" id="err-${h.id}"></span></div></details>
+    <details class="subd"><summary>－ 記錄賣出 ▾</summary>
+    <div class="row"><label>日期<input type="date" id="sd-${h.id}" value="${new Date().toISOString().slice(0,10)}"></label>
+      <label>股數（最多 ${fm(hStats(h).q)}）<input type="number" inputmode="numeric" id="sq-${h.id}"></label>
+      <label>賣出價<input type="number" inputmode="decimal" step="any" id="sp-${h.id}" placeholder="${h.price}"></label></div>
+    <div class="row"><button class="btn" data-act="sell" data-h="${h.id}">記錄賣出</button><button class="btn ghost" data-act="sellall" data-h="${h.id}">帶入全部股數</button><span class="muted" id="serr-${h.id}"></span></div></details>
+    <details class="subd"><summary>⚙ 進階設定 ▾</summary>
+    <div class="row"><label>現價（對帳後自動帶入）<input type="number" inputmode="decimal" step="any" value="${h.price}" data-f="hprice" data-h="${h.id}"></label>
       <label>產業<input value="${esc(h.sector)}" data-f="hsec" data-h="${h.id}"></label>
-      <label>台積電占比 %（估）<input type="number" value="${h.tsmc||0}" data-f="htsmc" data-h="${h.id}"></label></div>
-      <div class="row"><label>扣款說明<input value="${esc(h.plan)}" placeholder="每月 6 日扣 2,000 元" data-f="hplan" data-h="${h.id}"></label></div>
-      <div class="row"><label>除息月份<input value="${h.months.join(',')}" placeholder="1,4,7,10" data-f="hmonths" data-h="${h.id}"></label>
-      <label>每次配息／股<input type="number" step="any" value="${h.div||''}" placeholder="1.72" data-f="hdiv" data-h="${h.id}"></label>
-      <label>一年配息／股<input type="number" step="any" value="${h.divYr||''}" placeholder="4.936" data-f="hdivyr" data-h="${h.id}"></label></div>
-      <div class="row"><label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-f="hreinv" data-h="${h.id}"${h.reinvest?' checked':''}>股息再投資</label></div>
-      <div style="margin-top:10px;font-weight:500;font-size:14px">交易紀錄</div>${lotsHtml}
-      <div class="row" style="border-top:1px solid var(--line);padding-top:10px;margin-top:8px">
-        <label>日期<input type="date" id="nd-${h.id}" value="${new Date().toISOString().slice(0,10)}"></label>
-        <label>股數<input type="number" inputmode="numeric" id="nq-${h.id}" placeholder="10"></label>
-        <label>成交價<input type="number" inputmode="decimal" step="any" id="np-${h.id}" placeholder="${h.price}"></label>
-        <label>方式<select id="nk-${h.id}"><option value="lump"${h.longTerm?'':' selected'}>單筆</option><option value="dca"${h.longTerm?' selected':''}>定期定額</option></select></label></div>
-      <div class="row"><button class="btn primary" data-act="addlot" data-h="${h.id}">新增買進</button><span class="muted" id="err-${h.id}"></span></div>
-      <div style="margin-top:12px;font-weight:500;font-size:14px">記錄賣出</div>
-      <div class="row"><label>日期<input type="date" id="sd-${h.id}" value="${new Date().toISOString().slice(0,10)}"></label>
-        <label>股數（最多 ${fm(s.q)}）<input type="number" inputmode="numeric" id="sq-${h.id}" placeholder="${s.q||0}"></label>
-        <label>賣出價<input type="number" inputmode="decimal" step="any" id="sp-${h.id}" placeholder="${h.price}"></label></div>
-      <div class="row"><button class="btn" data-act="sell" data-h="${h.id}">記錄賣出</button><button class="btn ghost" data-act="sellall" data-h="${h.id}">帶入全部股數</button><span class="muted" id="serr-${h.id}"></span></div>
-      <div class="row" style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px"><span class="muted" style="flex:1">不想保留紀錄，可直接移除這檔（不計算賣出損益）。</span><button class="btn danger" data-act="delh" data-h="${h.id}">刪除這檔</button></div>
-    </div></details>`}).join('');
-  html+=`<section class="panel"><h2>新增台股</h2><div class="row">
+      <label>台積電占比 %<input type="number" value="${h.tsmc||0}" data-f="htsmc" data-h="${h.id}"></label></div>
+    <div class="row"><label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-f="hlong" data-h="${h.id}">改為定期定額（移到存股）</label></div>
+    <div class="row"><span style="flex:1"></span><button class="btn danger" data-act="delh" data-h="${h.id}">刪除這檔</button></div></details>
+  </div></details>`}
+function renderHold(){
+  const st=S.holdings.map(h=>({h,s:disp(h)}));const fx=+S.settings.fx||0,uC=S.us.reduce((a,u)=>a+(+u.cost||0),0),uV=S.us.reduce((a,u)=>a+(+u.value||0),0);
+  const inc=!!S.settings.ovUS&&fx>0&&S.us.length>0,ux=inc?fx:0;
+  const tc=st.reduce((a,x)=>a+x.s.c,0)+uC*ux,tv=st.reduce((a,x)=>a+x.s.v,0)+uV*ux,tp=tv-tc,dv=st.reduce((a,x)=>a+x.s.dv,0);
+  const palette=['#9DBCEB','#F3C77A','#EFA9A0','#BDB4EE','#9ED8C2','#D7CFA8'];
+  const tsmc=tv?st.reduce((a,x)=>a+x.s.v*(+x.h.tsmc||0)/100,0)/tv*100:0;
+  const pend=st.filter(x=>x.s.q>0&&x.s.src!=='b').length;
+  let html=`<section class="panel"><div class="top"><h2>總覽${inc?'（台股＋美股）':'（台股）'}</h2><button class="btn primary" data-act="recon">${reconOpen?'收起對帳':'對帳更新'}</button></div>
+    <div class="sum num">
+    <div><div class="k">總成本</div><div class="v">${fm(tc)}</div></div>
+    <div><div class="k">現值</div><div class="v">${fm(tv)}</div></div>
+    <div><div class="k">不含息報酬</div><div class="v ${tp>=0?'up':'down'}">${sgn(tp)}</div></div></div>
+    ${dv>0?`<div class="muted num" style="margin-top:8px">含息報酬 <b class="${tp+dv>=0?'up':'down'}">${sgn(tp+dv)} 元</b>（不含息報酬＋總配息 ${fm(dv)} 元）</div>`:''}
+    ${pend?`<div class="warn" style="margin-top:6px">有 ${pend} 檔還沒對帳，數字是估算，按「對帳更新」照國泰抄就會一致。</div>`:''}
+    ${st.some(x=>x.s.sold)?(()=>{const r=st.reduce((a,x)=>a+x.s.real,0);return `<div class="muted num" style="margin-top:8px">已實現損益 <b class="${r>=0?'up':'down'}">${sgn(r)} 元</b>（${st.filter(x=>x.s.sold).map(x=>esc(x.h.name)+' '+sgn(x.s.real)).join('、')}）</div>`})():''}
+    <div class="stack num" style="margin-top:10px">${st.map((x,i)=>tv&&x.s.v>0?`<span style="width:${(x.s.v/tv*100).toFixed(1)}%;background:${palette[i%6]};color:#1B2430">${esc(x.h.name)} ${(x.s.v/tv*100).toFixed(0)}%</span>`:'').join('')}${inc&&tv?S.us.map(u=>`<span style="width:${((+u.value||0)*fx/tv*100).toFixed(1)}%;background:#B5D4F4;color:#1B2430">${esc(u.code)} ${((+u.value||0)*fx/tv*100).toFixed(0)}%</span>`).join(''):''}</div>
+    <div class="muted" style="margin-top:6px">台積電實際曝險約 <b class="${tsmc>50?'up':''}">${tsmc.toFixed(0)}%</b>${tsmc>50?'，偏集中':''}</div>
+    ${S.us.length?`<div class="row" style="margin-top:8px"><span class="muted">範圍</span><button class="btn${S.settings.ovUS?'':' primary'}" data-act="ov" data-v="0">只看台股</button><button class="btn${S.settings.ovUS?' primary':''}" data-act="ov" data-v="1">台股＋美股</button></div>
+    ${S.settings.ovUS&&!fx?'<div class="warn">請在「對帳更新」填美金匯率，美股才會加進總覽。</div>':''}`:''}
+  </section>`;
+  if(reconOpen)html+=renderRecon();
+  const dca=st.filter(x=>x.h.longTerm),lump=st.filter(x=>!x.h.longTerm);
+  const twC=st.reduce((a,x)=>a+x.s.c,0),twV=st.reduce((a,x)=>a+x.s.v,0),twP=twV-twC,twN=st.filter(x=>x.s.q>0).length;
+  html+=`<details class="sec" data-id="sec-tw"${openSet.has('sec-tw')?' open':''}><summary><div><h2>台股</h2><div class="muted num">${twN} 檔・現值 ${fm(twV)} 元</div></div>
+    <div class="pl num"><b class="${twP>=0?'up':'down'}">${sgn(twP)}</b><span class="muted">點開看明細</span> <span class="chev">▾</span></div></summary><div class="secb">
+    <div class="subh">定期定額（存股）</div>${dca.length?dca.map(x=>dcaRow(x.h,x.s)).join(''):'<p class="muted">沒有定期定額的持股。</p>'}
+    <div class="subh">現股（單筆）</div>${lump.length?lump.map(x=>lumpCard(x.h,x.s)).join(''):'<p class="muted">沒有單筆買進的持股。</p>'}
+  </div></details>`;
+  html+=`<details class="sec" data-id="sec-addtw"${openSet.has('sec-addtw')?' open':''}><summary><h2>＋ 新增台股</h2><span class="chev">▾</span></summary><div class="secb"><div class="row">
     <label>代號<input id="ah-code" placeholder="輸入代號，例如 0056" data-look="ah" autocomplete="off"></label><label>名稱<input id="ah-name" placeholder="自動帶入"></label></div>
     <div class="hint" id="ah-hint"></div>
-    <div class="row"><label>類型${typeSel('被動式 ETF','id="ah-type"')}</label><label>產業<input id="ah-sec" placeholder="自動帶入"></label><label>現價<input type="number" step="any" id="ah-price" placeholder="58.55"></label></div>
+    <div class="row"><label>類型${typeSel('被動式 ETF','id="ah-type"')}</label><label>產業<input id="ah-sec" placeholder="自動帶入"></label></div>
+    <div class="row"><label>分類<select id="ah-cat"><option value="dca">定期定額（存股）</option><option value="lump">現股（單筆）</option></select></label><label>現價<input type="number" step="any" id="ah-price" placeholder="58.55"></label></div>
     <div class="row"><button class="btn primary" data-act="addh">加入持股</button><span class="muted" id="ah-err"></span></div>
-    <p class="muted">加入後點開卡片新增買進紀錄。損益為帳面損益；三個價位已扣買賣手續費與證交稅，並對齊跳動單位。</p></section></div></details>`;
+    <p class="muted">加入後用「對帳更新」照國泰抄數字；現股也可以點開卡片記錄買進。</p></div></details>`;
   html+=renderUS();
+  html+=renderAddUS();
   return html}
 
 function calcBuy(w,budget,loss,profit){const etf=isETF(w.type),p=+w.price;if(!(p>0))return null;
@@ -366,7 +410,18 @@ function renderBuy(){const c=S.calc;
   <div class="hint" id="aw-hint"></div>
   <div class="row"><button class="btn primary" data-act="addw">加入觀察</button><span class="muted" id="aw-err"></span></div></section>`}
 function renderSet(){const s=S.settings;
-  return `<section class="panel"><h2>台股手續費</h2><div class="row num">
+  const cu=S.settings.chatUrl||'';const codes=[...S.holdings.map(h=>h.code),...S.us.map(u=>u.code)];
+  return `<section class="panel"><h2>快速連結</h2>
+  <p style="font-weight:500;margin:0 0 6px">查最新股價</p>
+  ${codes.length?`<div class="row">${codes.map(c=>`<a class="btn" href="https://tw.stock.yahoo.com/quote/${encodeURIComponent(c)}" target="_blank" rel="noopener">${esc(c)} ↗</a>`).join('')}</div>`:'<p class="muted">還沒有持股，加入持股或匯入備份後，這裡會出現每一檔的按鈕。</p>'}
+  <div class="row"><label style="flex:1 1 140px">查其他代號<input id="q-code" placeholder="例如 2412" autocomplete="off"></label><a class="btn primary" id="q-go" href="https://tw.stock.yahoo.com/" target="_blank" rel="noopener" style="align-self:flex-end">查詢 ↗</a></div>
+  <p class="muted">會打開 Yahoo 股市的報價頁。看完後，數字請以國泰 App 為準，用持股頁的「對帳更新」抄進來。</p>
+  <p style="font-weight:500;margin:14px 0 6px">回到 Claude 對話</p>
+  ${cu?`<div class="row"><a class="btn primary" href="${esc(cu)}" target="_blank" rel="noopener">💬 打開對話 ↗</a><button class="btn ghost" data-act="chatclear">更換連結</button></div>`:
+  `<div class="row"><label style="flex:1 1 100%">貼上對話連結<input id="chat-url" inputmode="url" placeholder="https://claude.ai/chat/…"></label></div>
+  <div class="row"><button class="btn primary" data-act="chatsave">儲存連結</button><span class="muted" id="chat-err"></span></div>
+  <p class="muted">在 Claude 這個對話裡，點右上角的「⋯」或分享選項，複製對話連結貼到這裡，只要做一次。</p>`}</section>
+  <section class="panel"><h2>台股手續費</h2><div class="row num">
   <label>費率 %<input type="number" step="0.0001" value="${(s.rate*100).toFixed(4)}" data-f="srate"></label>
   <label>單筆低消（元）<input type="number" value="${s.minFee}" data-f="smin"></label>
   <label>定期定額每筆（元）<input type="number" value="${s.dcaFee}" data-f="sdca"></label></div>
@@ -393,7 +448,7 @@ function renderSet(){const s=S.settings;
 function renderPlan(){
   const pr=c=>{const h=S.holdings.find(x=>x.code===c);return h?h:null};
   const twd=S.plans.filter(p=>p.cur==='TWD').reduce((a,p)=>a+(+p.amount||0),0),usd=S.plans.filter(p=>p.cur==='USD').reduce((a,p)=>a+(+p.amount||0),0);
-  const st=S.holdings.map(h=>({h,s:hStats(h)}));
+  const st=S.holdings.map(h=>({h,s:disp(h)}));
   const yr=st.reduce((a,x)=>a+x.s.q*(x.h.divYr||x.h.div*x.h.months.length),0);
   const mset=new Set();st.forEach(x=>x.h.div>0&&x.h.months.forEach(m=>mset.add(m)));
   let html=`<section class="panel"><h2>每月扣款</h2><div class="sum num">
@@ -456,14 +511,14 @@ function renderUS(){const fx=+S.settings.fx||0,uC=S.us.reduce((a,u)=>a+(+u.cost|
       <div class="row"><label>扣款說明<input value="${esc(u.plan||'')}" data-f="uplan" data-u="${u.id}"></label><label>產業<input value="${esc(u.sector||'')}" data-f="usec" data-u="${u.id}"></label></div>
       <div class="kv"><span>停損價</span><span class="muted">長期存股不設</span></div>
       <div class="row"><span class="muted" style="flex:1">照國泰 App「定期投資 › 美股」的總成本與現值填寫即可。</span><button class="btn ghost danger" data-act="delus" data-u="${u.id}">刪除</button></div></div>`}).join('')}
-  <div class="row" style="border-top:1px solid var(--line);padding-top:10px;margin-top:12px">
-    <label>代號<input id="au-code" placeholder="輸入代號，例如 VOO" data-look="au" autocomplete="off"></label><label>名稱<input id="au-name" placeholder="自動帶入"></label>
-    <label>總成本（美元）<input type="number" step="any" id="au-cost" placeholder="50"></label><label>現值（美元）<input type="number" step="any" id="au-val" placeholder="50"></label></div>
-  <div class="hint" id="au-hint"></div>
-  <div class="row"><button class="btn primary" data-act="addus">加入美股</button><span class="muted" id="au-err"></span></div>
   <p class="muted">美股配息會先被美國預扣股息稅，領到的金額會少於公告配息。</p></div></details>`}
+function renderAddUS(){return `<details class="sec" data-id="sec-addus"${openSet.has('sec-addus')?' open':''}><summary><h2>＋ 新增美股</h2><span class="chev">▾</span></summary><div class="secb">
+  <div class="row"><label>代號<input id="au-code" placeholder="輸入代號，例如 VOO" data-look="au" autocomplete="off"></label><label>名稱<input id="au-name" placeholder="自動帶入"></label></div>
+  <div class="row"><label>總成本（美元）<input type="number" step="any" id="au-cost" placeholder="50"></label><label>現值（美元）<input type="number" step="any" id="au-val" placeholder="50"></label></div>
+  <div class="hint" id="au-hint"></div>
+  <div class="row"><button class="btn primary" data-act="addus">加入美股</button><span class="muted" id="au-err"></span></div></div></details>`}
 
-function projQ(h,k){let q=hStats(h).q;const now=new Date(),cy=now.getFullYear(),cm=now.getMonth(),tf=new Date(cy,cm+k,1);
+function projQ(h,k){let q=disp(h).q;const now=new Date(),cy=now.getFullYear(),cm=now.getMonth(),tf=new Date(cy,cm+k,1);
   S.plans.forEach(p=>{if(p.cur!=='TWD'||p.code!==h.code||!(p.day>0)||!(h.price>0))return;const per=Math.floor((p.amount-S.settings.dcaFee)/h.price);if(per<1)return;
     for(let i=0;i<=k;i++){const d=new Date(cy,cm+i,p.day);if(d>=new Date(cy,cm,now.getDate())&&d<tf)q+=per}});return q}
 function nextDiv(h){const now=new Date();for(let k=0;k<12;k++){const dt=new Date(now.getFullYear(),now.getMonth()+k,1),m=dt.getMonth()+1;
@@ -481,7 +536,7 @@ document.querySelector('.tabs').addEventListener('click',e=>{const b=e.target.cl
 app.addEventListener('toggle',e=>{const d=e.target;if(d.matches&&d.matches('details[data-id]')){d.open?openSet.add(d.dataset.id):openSet.delete(d.dataset.id);
   if(d.dataset.id==='sec-plan'){const sm=d.querySelector('summary');if(sm)sm.textContent=(d.open?'收合':'展開')+'扣款明細（'+S.plans.length+' 筆）▾'}}},true);
 document.getElementById('thm').addEventListener('click',()=>{const o=['auto','light','dark'],t=(S.settings.theme)||'auto';S.settings.theme=o[(o.indexOf(t)+1)%3];save();applyTheme();toast('外觀：'+THM[S.settings.theme])});
-app.addEventListener('input',e=>{const t=e.target;if(t.dataset&&t.dataset.look)lookup(t.dataset.look,t.value)});
+app.addEventListener('input',e=>{const t=e.target;if(t.id==='q-code'){const g=document.getElementById('q-go'),v=t.value.trim().toUpperCase();if(g)g.href=v?'https://tw.stock.yahoo.com/quote/'+encodeURIComponent(v):'https://tw.stock.yahoo.com/'}if(t.dataset&&t.dataset.look)lookup(t.dataset.look,t.value)});
 app.addEventListener('click',e=>{if(e.target.closest('summary input,summary button'))e.preventDefault()},true);
 const H=id=>S.holdings.find(h=>h.id===id),W=id=>S.watch.find(w=>w.id===id);
 app.addEventListener('input',e=>{const t=e.target,f=t.dataset.f;if(!f)return;
@@ -490,6 +545,8 @@ app.addEventListener('input',e=>{const t=e.target,f=t.dataset.f;if(!f)return;
     const r=document.querySelector('[data-f="ratio"]');if(r)r.focus()}});
 app.addEventListener('change',e=>{const t=e.target,f=t.dataset.f;if(!f)return;const v=t.value;if(['srate','smin','sdca','susdca','susetf','susrate'].includes(f))toast('已儲存');
   if(f.startsWith('lot')){const h=H(t.dataset.h),l=h&&h.lots.find(x=>x.id===t.dataset.l);if(!l)return;const n=+v;if(!(n>0)){t.value=f==='lotq'?l.shares:l.price;return}if(f==='lotq')l.shares=n;else l.price=n}
+  else if(['bq','bc','bv','bd'].includes(f)){const h=H(t.dataset.h);if(!h)return;h[f]=Math.max(0,+v||0);h.btime=nowStamp();
+    if(+h.bq>0&&+h.bv>0){const e=isETF(h.type),p=floorTick(+h.bv/(+h.bq*(1-S.settings.rate-taxR(e))),e);if(p>0){h.price=p;h.time=h.btime}}toast('已儲存')}
   else if(f.startsWith('h')){const h=H(t.dataset.h);if(!h)return;
     if(f==='hprice'){if(!(+v>0)){t.value=h.price;return}h.price=+v;h.time=nowStamp();const w=S.watch.find(x=>x.code===h.code);if(w){w.price=h.price;w.time=h.time}}
     else if(f==='hloss')h.maxLoss=Math.max(0,+v||0);else if(f==='hprofit')h.profit=Math.max(0,+v||0);
@@ -515,7 +572,7 @@ app.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)re
   else if(a==='delh'){const h=H(b.dataset.h);if(!confirm('刪除 '+h.name+' 和所有買進紀錄嗎？'))return;S.holdings=S.holdings.filter(x=>x.id!==h.id)}
   else if(a==='addh'){const c=document.getElementById('ah-code').value.trim(),n=document.getElementById('ah-name').value.trim(),p=+document.getElementById('ah-price').value,ty=document.getElementById('ah-type').value,err=document.getElementById('ah-err');
     if(!c||!n||!(p>0)){err.textContent='請填代號、名稱和現價';err.style.color='var(--up)';return}
-    const id=uid();S.holdings.push({id,code:c,name:n,type:ty,sector:(document.getElementById('ah-sec').value.trim()||'其他'),price:p,time:nowStamp(),longTerm:false,maxLoss:0,profit:0,tsmc:0,plan:'',lots:[]});openSet.add(id)}
+    const id=uid(),lt=document.getElementById('ah-cat').value==='dca';S.holdings.push({id,code:c,name:n,type:ty,sector:(document.getElementById('ah-sec').value.trim()||'其他'),price:p,time:nowStamp(),longTerm:lt,maxLoss:0,profit:0,tsmc:0,plan:'',lots:[],months:[],div:0,divYr:0,ann:{},reinvest:false});openSet.add(id)}
   else if(a==='addw'){const c=document.getElementById('aw-code').value.trim(),n=document.getElementById('aw-name').value.trim(),p=+document.getElementById('aw-price').value,ty=document.getElementById('aw-type').value,sc=document.getElementById('aw-sec').value.trim()||'其他',err=document.getElementById('aw-err');
     if(!c||!n||!(p>0)){err.textContent='請填代號、名稱和現價';err.style.color='var(--up)';return}
     S.watch.push({id:uid(),code:c,name:n,type:ty,sector:sc,price:p,time:nowStamp()})}
@@ -541,6 +598,12 @@ app.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)re
     S.us.push({id:uid(),code:c.toUpperCase(),name:n,sector:((USDB[c.toUpperCase()]||[])[1]||'美股'),cost:co,value:va,shares:0,time:nowStamp(),plan:''})}
   else if(a==='delus'){if(!confirm('刪除這檔美股紀錄嗎？'))return;S.us=S.us.filter(u=>u.id!==b.dataset.u)}
   else if(a==='ov'){S.settings.ovUS=b.dataset.v==='1';toast(S.settings.ovUS?'總覽改為台股＋美股':'總覽改為只看台股')}
+  else if(a==='recon'){reconOpen=!reconOpen;if(reconOpen){render();const r=document.getElementById('recon');if(r&&r.scrollIntoView)r.scrollIntoView({behavior:'smooth',block:'start'});return}}
+  else if(a==='reconsave'){if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();reconOpen=false;toast('已儲存');save();render();window.scrollTo(0,0);return}
+  else if(a==='chatsave'){const v=(document.getElementById('chat-url').value||'').trim(),err=document.getElementById('chat-err');
+    if(!/^https:\/\/(www\.)?claude\.ai\//.test(v)){err.textContent='請貼上 https://claude.ai/ 開頭的對話連結';err.style.color='var(--up)';return}
+    S.settings.chatUrl=v;toast('已儲存')}
+  else if(a==='chatclear'){S.settings.chatUrl='';}
   else if(a==='delw'){S.watch=S.watch.filter(w=>w.id!==b.dataset.w);S.pair=S.pair.filter(x=>x!==b.dataset.w)}
   else if(a==='pair'){const id=b.dataset.w;if(S.pair.includes(id))S.pair=S.pair.filter(x=>x!==id);else{S.pair.push(id);if(S.pair.length>2)S.pair.shift()}}
   else if(a==='copy'){const t=document.getElementById('bk');t.select();let ok=false;try{ok=document.execCommand('copy')}catch(x){}
