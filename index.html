@@ -109,6 +109,8 @@ textarea{width:100%;min-height:110px;font-size:12px;font-family:ui-monospace,Men
 .pl-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;border-top:1px solid var(--line);padding:10px 0}
 .pl-item:first-of-type{border-top:0}
 .pl-item input{width:84px;padding:4px 6px}
+.grp{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;flex:0 0 auto}
+@media (max-width:600px){.pl-item{grid-template-columns:1fr;gap:6px}.pl-item>.row{justify-content:flex-start!important}.pl-item>div:first-child{font-size:15px}}
 .warn{color:var(--up);font-size:12px}
 .sec{background:var(--paper);border:1px solid var(--line);border-radius:20px;margin:12px 0}
 .sec>summary{list-style:none;cursor:pointer;padding:14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
@@ -483,13 +485,12 @@ function renderPlan(){
     <p class="muted" style="margin-top:8px">金額＝除息時預估持有股數（現有股數＋之前會扣到的定期定額）× 每股配息。沒標「估」的是公司已公告的金額；標「估」的用最近一次配息推算，實際以公告為準。月份為除息月，入帳通常晚 3 到 4 週，部分公司或 ETF 會扣約 10 元匯費。</p>
     <div class="note">配息時股價會同步扣掉配息金額，總資產不會因此增加。不急著用現金時，股息再投資的長期效果通常較好。</div></section>
   <details class="sec" data-id="sec-div"${openSet.has('sec-div')?' open':''}><summary><div><h2>修改配息資料</h2><div class="muted">除息月份、每股配息、已公告金額</div></div><span class="chev">▾</span></summary><div class="secb">
-  <p class="muted">除息月份用逗號分隔，例如 1,4,7,10；「每股」填最近一次配息；公司公告下次金額後，填在「已公告」欄。</p>
+  <p class="muted">每一行依序是：除息月份（用逗號分隔，例如 1,4,7,10）、最近一次每股配息、是否再投資、已公告的月份與每股金額。金額單位都是元。</p>
   ${S.holdings.map(h=>`<div class="pl-item"><div><b style="font-weight:500">${esc(h.name)}</b> <span class="code">${esc(h.code)}</span></div>
-    <div class="row num" style="margin:0;justify-content:flex-end"><input value="${h.months.join(',')}" placeholder="月份" style="width:96px" data-f="hmonths" data-h="${h.id}" aria-label="除息月份">
-    <input type="number" step="any" value="${h.div||''}" placeholder="每股" style="width:68px" data-f="hdiv" data-h="${h.id}" aria-label="最近一次每股配息"><span class="muted">元</span>
-    <span class="muted">已公告</span><input type="number" min="1" max="12" value="${Object.keys(h.ann)[0]||''}" placeholder="月" style="width:48px" data-f="hannm" data-h="${h.id}" aria-label="已公告除息月份"><span class="muted">月</span>
-    <input type="number" step="any" value="${Object.values(h.ann)[0]||''}" placeholder="每股" style="width:64px" data-f="hannv" data-h="${h.id}" aria-label="已公告每股配息"><span class="muted">元</span>
-    <label style="flex-direction:row;align-items:center;gap:4px;flex:0 0 auto;font-size:12px"><input type="checkbox" data-f="hreinv" data-h="${h.id}"${h.reinvest?' checked':''}>再投資</label></div></div>`).join('')}
+    <div class="row num" style="margin:0;flex-wrap:nowrap;overflow-x:auto;gap:5px;justify-content:flex-start"><input value="${h.months.join(',')}" placeholder="月份" style="width:88px;font-size:14px" data-f="hmonths" data-h="${h.id}" aria-label="除息月份">
+    <input type="number" step="any" value="${h.div||''}" placeholder="每股" style="width:52px;font-size:14px" data-f="hdiv" data-h="${h.id}" aria-label="最近一次每股配息">
+    <label class="grp" style="flex:0 0 auto;flex-direction:row;gap:2px;font-size:12.5px"><input type="checkbox" style="width:auto;margin:0" data-f="hreinv" data-h="${h.id}"${h.reinvest?' checked':''}>再投資</label>
+    <span class="grp" style="gap:3px"><span class="muted">公告</span><input type="number" min="1" max="12" value="${Object.keys(h.ann)[0]||''}" placeholder="月" style="width:40px;font-size:14px" data-f="hannm" data-h="${h.id}" aria-label="已公告除息月份"><span class="muted">月</span><input type="number" step="any" value="${Object.values(h.ann)[0]||''}" placeholder="每股" style="width:52px;font-size:14px" data-f="hannv" data-h="${h.id}" aria-label="已公告每股配息"></span></div></div>`).join('')}
   <p class="muted" style="margin-top:8px">預設資料：0050 半年配（1、7 月），最近一次每股 1 元；台積電季配（3、6、9、12 月），已公告 12 月每股 7 元；0056 季配（1、4、7、10 月）；00878 季配（2、5、8、11 月）。配息金額每次公告都可能變動。</p>
   <div class="row"><button class="btn primary" data-act="savediv">儲存</button><span class="muted">修改後離開欄位也會自動儲存</span></div></div></details>`;
   return html}
